@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RestoPilot</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Manrope:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#050505;--card:#121110;--line:#2a2418;--gold:#c9a24b;--gold2:#e6c878;--txt:#f1ebdd;--mut:#9a917d;--bad:#e5645a;--ok:#6fbf8a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 Manrope,system-ui,sans-serif;padding-bottom:84px}
+h1,h2,h3{font-family:'Cormorant Garamond',Georgia,serif;font-weight:700;margin:0}
+h2{font-size:26px;margin:18px 0 10px;color:var(--gold2)}
+.wrap{max-width:920px;margin:0 auto;padding:14px}
+header{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
+header h1{font-size:24px;color:var(--gold);flex:1}
+select,input,button{font:inherit;color:var(--txt)}
+input,select{width:100%;background:#0c0b0a;border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin:5px 0 10px}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+label{font-size:13px;color:var(--mut)}
+button{background:var(--gold);color:#120d02;border:0;border-radius:10px;padding:11px 16px;font-weight:700;cursor:pointer}
+button.alt{background:transparent;color:var(--gold2);border:1px solid var(--gold)}
+button.sm{padding:6px 10px;font-size:13px}
+button.bad{background:transparent;color:var(--bad);border:1px solid var(--bad)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.stat b{display:block;font-family:'Cormorant Garamond',serif;font-size:26px;color:var(--gold2)}
+.stat span{color:var(--mut);font-size:13px}
+.row{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border:0}.row small{color:var(--mut);display:block}
+.low{color:var(--bad)}.ok{color:var(--ok)}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#0b0a09;border-top:1px solid var(--line);z-index:6}
+nav button{flex:1;background:none;color:var(--mut);border-radius:0;padding:16px 4px;font-size:13px}
+nav button.on{color:var(--gold2);box-shadow:inset 0 3px var(--gold)}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:96px;background:var(--card);border:1px solid var(--gold);padding:10px 16px;border-radius:10px;display:none;z-index:9;max-width:90%}
+.auth{max-width:380px;margin:9vh auto;padding:18px}.auth h1{font-size:44px;color:var(--gold);text-align:center}
+.auth p{text-align:center;color:var(--mut)}.link{background:none;color:var(--gold2);padding:6px;text-decoration:underline;width:100%}
+.qty{display:flex;gap:6px;align-items:center}.qty button{padding:4px 10px}
+</style>
+</head>
+<body>
+<div id="app"></div><div id="toast" role="status"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+const SB=supabase.createClient('https://yrmoxiyjglzaqiwpprii.supabase.co','sb_publishable_YbvpTan26LJTmuc-A2Ffbw_xD31uZzG');
+const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>new Intl.NumberFormat('fr-FR').format(Math.round(n||0))+' FCFA';
+const S={user:null,biz:[],cur:null,role:null,tab:'dash',prods:[],cart:[],disc:0,pay:'cash'};
+const mgr=()=>['owner','manager'].includes(S.role);
+let tt;function toast(m,bad){const t=$('#toast');t.textContent=m;t.style.borderColor=bad?'var(--bad)':'var(--gold)';t.style.display='block';clearTimeout(tt);tt=setTimeout(()=>t.style.display='none',4500)}
+const T={'Invalid login credentials':'E-mail ou mot de passe incorrect.','User already registered':'Un compte existe déjà avec cet e-mail.','Email not confirmed':'Confirme d\'abord ton e-mail.'};
+const err=e=>T[e.message]||(e.message||'Une erreur est survenue.').replace(/^.*?:\s*/,'');
+const view=h=>$('#app').innerHTML=h;
+
+/* ---------- Authentification ---------- */
+function authView(m='login'){
+ view(`<div class="auth"><h1>RestoPilot</h1><p>${m=='signup'?'Crée ton compte':m=='reset'?'Réinitialise ton mot de passe':'Gère ton établissement'}</p>
+ ${m=='signup'?'<label>Nom complet</label><input id="nm" autocomplete="name">':''}
+ <label>E-mail</label><input id="em" type="email" autocomplete="email">
+ ${m!='reset'?'<label>Mot de passe (8 caractères minimum)</label><input id="pw" type="password" autocomplete="'+(m=='signup'?'new':'current')+'-password">':''}
+ <button style="width:100%" onclick="auth('${m}')">${m=='signup'?'Créer mon compte':m=='reset'?'Envoyer le lien':'Se connecter'}</button>
+ ${m=='login'?'<button class="link" onclick="authView(\'signup\')">Créer un compte</button><button class="link" onclick="authView(\'reset\')">Mot de passe oublié</button>':'<button class="link" onclick="authView()">Retour à la connexion</button>'}</div>`)}
+async function auth(m){
+ const email=$('#em').value.trim(),pw=$('#pw')?.value||'';
+ if(!email)return toast('Saisis ton e-mail.',1);
+ if(m!='reset'&&pw.length<8)return toast('Le mot de passe doit contenir au moins 8 caractères.',1);
+ let r;
+ if(m=='login')r=await SB.auth.signInWithPassword({email,password:pw});
+ else if(m=='signup'){r=await SB.auth.signUp({email,password:pw,options:{data:{full_name:$('#nm').value.trim()}}});if(!r.error&&!r.data.session)return toast('Compte créé. Confirme ton e-mail puis connecte-toi.')}
+ else{r=await SB.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});if(!r.error)return toast('Si ce compte existe, un lien vient d\'être envoyé.')}
+ if(r.error)toast(err(r.error),1)}
+function recoveryView(){view(`<div class="auth"><h1>RestoPilot</h1><p>Choisis un nouveau mot de passe</p><input id="pw" type="password" autocomplete="new-password"><button style="width:100%" onclick="newPw()">Enregistrer</button></div>`)}
+async function newPw(){const p=$('#pw').value;if(p.length<8)return toast('Au moins 8 caractères.',1);const{error}=await SB.auth.updateUser({password:p});error?toast(err(error),1):(toast('Mot de passe modifié.'),start())}
+const logout=()=>SB.auth.signOut();
+
+/* ---------- Établissements ---------- */
+async function start(){
+ const{data,error}=await SB.from('memberships').select('role,active,businesses(id,name,business_type,tax_rate)').eq('user_id',S.user.id).eq('active',true);
+ if(error)return toast(err(error),1);
+ S.biz=(data||[]).filter(x=>x.businesses);
+ if(!S.biz.length)return onboard();
+ const saved=localStorage.getItem('rp_biz'),f=S.biz.find(x=>x.businesses.id==saved)||S.biz[0];
+ pick(f.businesses.id);shell()}
+function pick(id){const f=S.biz.find(x=>x.businesses.id==id);S.cur=f.businesses;S.role=f.role;S.cart=[];try{localStorage.setItem('rp_biz',id)}catch(e){}}
+function onboard(){view(`<div class="auth"><h1>Ton établissement</h1><p>Crée ton premier restaurant ou bar</p><label>Nom</label><input id="bn"><label>Type</label>
+ <select id="bt"><option value="restaurant">Restaurant</option><option value="bar">Bar</option><option value="both">Restaurant et bar</option><option value="maquis">Maquis</option><option value="cafe">Café</option><option value="hotel">Hôtel</option><option value="autre">Autre</option></select>
+ <button style="width:100%" onclick="mkBiz()">Créer l'établissement</button><button class="link" onclick="logout()">Se déconnecter</button></div>`)}
+async function mkBiz(){const{error}=await SB.rpc('rp_create_business',{p_name:$('#bn').value,p_business_type:$('#bt').value});if(error)return toast(err(error),1);await start()}
+async function newBiz(){const n=prompt('Nom du nouvel établissement ?');if(!n)return;const{error}=await SB.rpc('rp_create_business',{p_name:n,p_business_type:'restaurant'});if(error)return toast(err(error),1);await start()}
+
+/* ---------- Coque ---------- */
+function shell(){
+ view(`<header><h1>RestoPilot</h1><select id="bs" style="width:auto;margin:0;max-width:150px">${S.biz.map(x=>`<option value="${x.businesses.id}" ${x.businesses.id==S.cur.id?'selected':''}>${esc(x.businesses.name)}</option>`).join('')}</select>
+ <button class="alt sm" onclick="newBiz()" title="Ajouter un établissement">+</button><button class="alt sm" onclick="logout()">Quitter</button></header>
+ <div class="wrap" id="main"></div>
+ <nav>${[['dash','Tableau de bord'],['pos','Caisse'],['prod','Produits'],['exp','Dépenses']].map(t=>`<button data-t="${t[0]}" onclick="go('${t[0]}')">${t[1]}</button>`).join('')}</nav>`);
+ $('#bs').onchange=e=>{pick(e.target.value);go(S.tab)};go(S.tab)}
+async function go(t){S.tab=t;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t==t));$('#main').innerHTML='<p style="color:var(--mut)">Chargement…</p>';try{await V[t]()}catch(e){$('#main').innerHTML='';toast(err(e),1)}}
+async function loadProds(){const{data,error}=await SB.from('products').select('*').eq('business_id',S.cur.id).order('name');if(error)throw error;S.prods=data||[]}
+const rows=(a,f,empty)=>a.length?a.map(f).join(''):`<p style="color:var(--mut)">${empty}</p>`;
+
+const V={
+/* Tableau de bord */
+async dash(){
+ const n=new Date(),d0=new Date(n.getFullYear(),n.getMonth(),n.getDate()),wk=new Date(d0);wk.setDate(d0.getDate()-((d0.getDay()+6)%7));
+ const m0=new Date(n.getFullYear(),n.getMonth(),1),since=(wk<m0?wk:m0).toISOString(),id=S.cur.id;
+ const[s,e]=await Promise.all([SB.from('sales').select('id,total_amount,status,created_at').eq('business_id',id).gte('created_at',since).order('created_at',{ascending:false}),SB.from('expenses').select('amount').eq('business_id',id).gte('created_at',m0.toISOString())]);
+ if(s.error)throw s.error;if(e.error)throw e.error;await loadProds();
+ const ok=s.data.filter(x=>x.status=='completed'),sum=(a,d)=>a.filter(x=>new Date(x.created_at)>=d).reduce((t,x)=>t+Number(x.total_amount),0);
+ const ca=[sum(ok,d0),sum(ok,wk),sum(ok,m0)],dep=e.data.reduce((t,x)=>t+Number(x.amount),0),low=S.prods.filter(p=>p.active&&p.stock_quantity<=p.low_stock_threshold);
+ $('#main').innerHTML=`<h2>${esc(S.cur.name)}</h2><div class="grid">
+ ${[['Ventes du jour',fmt(ca[0])],['Ventes de la semaine',fmt(ca[1])],['Ventes du mois',fmt(ca[2])],['Dépenses du mois',fmt(dep)],['Bénéfice estimé du mois (ventes − dépenses)',fmt(ca[2]-dep)],['Ventes enregistrées ce mois',ok.filter(x=>new Date(x.created_at)>=m0).length],['Produits actifs',S.prods.filter(p=>p.active).length]].map(c=>`<div class="card stat"><b>${c[1]}</b><span>${c[0]}</span></div>`).join('')}</div>
+ <div class="card"><h3>Alertes de stock</h3>${rows(low,p=>`<div class="row"><span>${esc(p.name)}</span><span class="low">${p.stock_quantity} en stock (seuil ${p.low_stock_threshold})</span></div>`,'Aucun produit en alerte.')}</div>
+ <div class="card"><h3>Dernières ventes</h3>${rows(s.data.slice(0,10),x=>`<div class="row"><span>${fmt(x.total_amount)}<small>${new Date(x.created_at).toLocaleString('fr-FR')} ${x.status=='cancelled'?'· annulée':''}</small></span>${mgr()&&x.status=='completed'?`<button class="bad sm" onclick="cancelSale('${x.id}')">Annuler</button>`:''}</div>`,'Aucune vente pour le moment.')}</div>`},
+/* Caisse */
+async pos(){
+ if(!['owner','manager','cashier'].includes(S.role))return $('#main').innerHTML='<p>Ton rôle ne permet pas d\'encaisser.</p>';
+ await loadProds();drawPos()},
+/* Produits */
+async prod(){await loadProds();drawProd()},
+/* Dépenses */
+async exp(){
+ const{data,error}=await SB.from('expenses').select('*').eq('business_id',S.cur.id).order('created_at',{ascending:false}).limit(50);if(error)throw error;
+ $('#main').innerHTML=`<h2>Dépenses</h2>${mgr()?`<div class="card"><label>Description</label><input id="ed"><label>Montant (FCFA)</label><input id="ea" type="number" min="1" inputmode="numeric"><label>Catégorie</label><input id="ec" placeholder="Achats, loyer, salaires…"><button onclick="addExp()">Ajouter la dépense</button></div>`:''}
+ <div class="card">${rows(data,x=>`<div class="row"><span>${esc(x.description)}<small>${esc(x.category||'Sans catégorie')} · ${new Date(x.created_at).toLocaleDateString('fr-FR')}</small></span><b>${fmt(x.amount)}</b></div>`,'Aucune dépense enregistrée.')}</div>`}
+};
+
+/* ---------- Caisse ---------- */
+const calc=()=>{const sub=S.cart.reduce((t,l)=>t+l.p.unit_price*l.q,0),d=Math.min(Math.max(+S.disc||0,0),sub),tax=Math.round((sub-d)*S.cur.tax_rate/100);return{sub,d,tax,total:sub-d+tax}};
+function drawPos(){
+ const c=calc(),q=($('#q')?.value||'').toLowerCase();
+ $('#main').innerHTML=`<h2>Caisse</h2><input id="q" placeholder="Rechercher un produit" value="${esc(q)}" oninput="drawPos();$('#q').focus()">
+ <div class="card">${rows(S.prods.filter(p=>p.active&&p.name.toLowerCase().includes(q)),p=>`<div class="row"><span>${esc(p.name)}<small>${fmt(p.unit_price)} · stock ${p.stock_quantity}</small></span><button class="sm" ${p.stock_quantity<=0?'disabled':''} onclick="addCart('${p.id}')">Ajouter</button></div>`,'Aucun produit. Ajoute-en dans l\'onglet Produits.')}</div>
+ <div class="card"><h3>Panier</h3>${rows(S.cart,l=>`<div class="row"><span>${esc(l.p.name)}<small>${fmt(l.p.unit_price)}</small></span><span class="qty"><button class="alt sm" onclick="qty('${l.p.id}',-1)">−</button>${l.q}<button class="alt sm" onclick="qty('${l.p.id}',1)">+</button></span></div>`,'Le panier est vide.')}
+ <label>Remise (FCFA)</label><input id="dc" type="number" min="0" value="${S.disc||''}" oninput="S.disc=this.value;drawPos();$('#dc').focus()">
+ <label>Paiement</label><select id="py" onchange="S.pay=this.value"><option value="cash">Espèces</option><option value="mtn_momo">MTN MoMo</option><option value="moov_money">Moov Money</option><option value="card">Carte</option><option value="other">Autre</option></select>
+ <div class="row"><span>Sous-total</span><span>${fmt(c.sub)}</span></div><div class="row"><span>Taxe (${S.cur.tax_rate} %)</span><span>${fmt(c.tax)}</span></div><div class="row"><b>Total à payer</b><b style="color:var(--gold2)">${fmt(c.total)}</b></div>
+ <button style="width:100%;margin-top:8px" ${S.cart.length?'':'disabled'} onclick="sell()">Encaisser</button><small style="color:var(--mut)">Le montant final est recalculé par le serveur.</small></div>`;
+ $('#py').value=S.pay}
+function addCart(id){const l=S.cart.find(x=>x.p.id==id);l?l.q++:S.cart.push({p:S.prods.find(x=>x.id==id),q:1});drawPos()}
+function qty(id,d){const l=S.cart.find(x=>x.p.id==id);l.q+=d;if(l.q<=0)S.cart=S.cart.filter(x=>x!==l);drawPos()}
+async function sell(){
+ const c=calc(),items=S.cart.map(l=>({product_id:l.p.id,quantity:l.q}));
+ const pays=S.pay=='cash'?null:[{method:S.pay,amount:c.total}];
+ const{data,error}=await SB.rpc('rp_create_sale',{p_business_id:S.cur.id,p_items:items,p_payments:pays,p_discount:c.d,p_note:null});
+ if(error)return toast(err(error),1);
+ const rec={n:S.cur.name,items:S.cart.map(l=>[l.p.name,l.q,l.p.unit_price]),c,pay:S.pay,id:data};
+ S.cart=[];S.disc=0;toast('Vente enregistrée.');await loadProds();drawPos();receipt(rec)}
+function receipt(r){const w=window.open('','_blank');if(!w)return;w.document.write(`<title>Reçu</title><body style="font:14px monospace;max-width:300px;margin:auto"><h3 style="text-align:center">${esc(r.n)}</h3><p>${new Date().toLocaleString('fr-FR')}</p>${r.items.map(i=>`<div>${esc(i[0])} x${i[1]} — ${fmt(i[1]*i[2])}</div>`).join('')}<hr><div>Remise : ${fmt(r.c.d)}</div><div>Taxe : ${fmt(r.c.tax)}</div><b>Total : ${fmt(r.c.total)}</b><p>Paiement : ${esc(r.pay)}</p><p style="text-align:center">Merci !</p><script>print()<\/script>`);w.document.close()}
+async function cancelSale(id){const r=prompt('Motif de l\'annulation ?');if(r===null)return;const{error}=await SB.rpc('rp_cancel_sale',{p_sale_id:id,p_reason:r});error?toast(err(error),1):(toast('Vente annulée, stock remis.'),go('dash'))}
+
+/* ---------- Produits ---------- */
+function drawProd(){
+ $('#main').innerHTML=`<h2>Produits et stock</h2>${mgr()?`<div class="card"><label>Nom</label><input id="pn"><label>Catégorie</label><input id="pc"><label>Prix de vente (FCFA)</label><input id="pp" type="number" min="0" inputmode="numeric"><label>Prix d'achat (FCFA)</label><input id="pa" type="number" min="0" inputmode="numeric"><label>Seuil d'alerte</label><input id="ps" type="number" min="0" value="5"><button onclick="addProd()">Ajouter le produit</button></div>`:''}
+ <div class="card">${rows(S.prods,p=>`<div class="row"><span>${esc(p.name)} ${p.active?'':'<small>désactivé</small>'}<small>${esc(p.category||'Sans catégorie')} · vente ${fmt(p.unit_price)} · achat ${fmt(p.cost_price)}</small></span>
+ <span style="text-align:right"><b class="${p.stock_quantity<=p.low_stock_threshold?'low':'ok'}">${p.stock_quantity}</b>${mgr()?`<br><button class="alt sm" onclick="stock('${p.id}','in')">Entrée</button> <button class="alt sm" onclick="stock('${p.id}','loss')">Perte</button> <button class="alt sm" onclick="togProd('${p.id}',${!p.active})">${p.active?'Désactiver':'Activer'}</button>`:''}</span></div>`,'Aucun produit pour le moment.')}</div>`}
+async function addProd(){
+ const n=$('#pn').value.trim(),pp=+$('#pp').value;if(n.length<2||!(pp>=0)||$('#pp').value==='')return toast('Saisis un nom et un prix de vente.',1);
+ const{error}=await SB.from('products').insert({business_id:S.cur.id,name:n,category:$('#pc').value.trim()||null,unit_price:pp,cost_price:+$('#pa').value||0,low_stock_threshold:+$('#ps').value||0});
+ if(error)return toast(err(error),1);toast('Produit ajouté. Ajoute du stock avec « Entrée ».');await loadProds();drawProd()}
+async function stock(id,type){
+ const q=+prompt(type=='in'?'Quantité reçue ?':'Quantité perdue ?');if(!(q>0))return;
+ const{error}=await SB.rpc('rp_adjust_stock',{p_business_id:S.cur.id,p_product_id:id,p_quantity:q,p_type:type,p_reason:null});
+ if(error)return toast(err(error),1);toast('Stock mis à jour.');await loadProds();drawProd()}
+async function togProd(id,a){const{error}=await SB.from('products').update({active:a}).eq('id',id).eq('business_id',S.cur.id);if(error)return toast(err(error),1);await loadProds();drawProd()}
+
+/* ---------- Dépenses ---------- */
+async function addExp(){
+ const d=$('#ed').value.trim(),a=+$('#ea').value;if(!d||!(a>0))return toast('Saisis une description et un montant positif.',1);
+ const{error}=await SB.from('expenses').insert({business_id:S.cur.id,created_by:S.user.id,description:d,amount:a,category:$('#ec').value.trim()||null});
+ error?toast(err(error),1):(toast('Dépense ajoutée.'),go('exp'))}
+
+/* ---------- Démarrage ---------- */
+SB.auth.onAuthStateChange((ev,s)=>{
+ if(ev=='PASSWORD_RECOVERY')return recoveryView();
+ if(ev=='TOKEN_REFRESHED')return;
+ S.user=s?.user||null;
+ setTimeout(()=>S.user?start():authView(),0)});
+</script>
+</body>
+</html>
